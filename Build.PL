@@ -16,7 +16,7 @@ my $builder = Module::Build->new(
     requires => {
         'perl' => 5.006,
     },
-    add_to_cleanup      => [ 'Statistics-Sequences-Turns-0.04-*' ],
+    add_to_cleanup      => [ 'Statistics-Sequences-Turns-0.041-*' ],
     create_makefile_pl => 'traditional',
 );
 

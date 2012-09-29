@@ -17,9 +17,9 @@ name: Statistics-Sequences-Turns
 provides:
   Statistics::Sequences::Turns:
     file: lib/Statistics/Sequences/Turns.pm
-    version: 0.04
+    version: 0.041
 requires:
   perl: 5.006
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.04
+version: 0.041

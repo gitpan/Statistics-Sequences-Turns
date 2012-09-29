@@ -9,7 +9,7 @@ use Scalar::Util qw(looks_like_number);
 use Statistics::Sequences 0.051;
 @ISA = qw(Statistics::Sequences);
 
-$VERSION = '0.04';
+$VERSION = '0.041';
 
 =pod
 
@@ -19,7 +19,7 @@ Statistics::Sequences::Turns - Kendall's test for turning-points - peaks or trou
 
 =head1 SYNOPSIS
 
- use Statistics::Sequences::Turns 0.031;
+ use Statistics::Sequences::Turns 0.04;
  $turns = Statistics::Sequences::Turns->new();
  $turns->load(0, 3, 9, 2 , 1, 1, 3, 4, 0, 3, 5, 5, 5, 8, 4, 7, 3, 2, 4, 3, 6); # or send with each stat call
  $val = $turns->observed(); # also expected() and variance(), with optional arg trials => n in place of real data 
