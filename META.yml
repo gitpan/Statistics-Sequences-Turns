@@ -3,6 +3,8 @@ abstract: "Kendall's test for turning-points - peaks or troughs - in a numerical
 author:
   - 'Roderick Garton <rgarton@cpan.org>'
 build_requires:
+  Scalar::Util: 1.23
+  Statistics::Sequences: 0.051
   Test::More: 0
 configure_requires:
   Module::Build: 0.36
@@ -15,9 +17,9 @@ name: Statistics-Sequences-Turns
 provides:
   Statistics::Sequences::Turns:
     file: lib/Statistics/Sequences/Turns.pm
-    version: 0.03
+    version: 0.04
 requires:
   perl: 5.006
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.03
+version: 0.04

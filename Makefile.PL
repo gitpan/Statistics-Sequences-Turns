@@ -6,6 +6,8 @@ WriteMakefile
   'NAME' => 'Statistics::Sequences::Turns',
   'VERSION_FROM' => 'lib/Statistics/Sequences/Turns.pm',
   'PREREQ_PM' => {
+                   'Scalar::Util' => '1.23',
+                   'Statistics::Sequences' => '0.051',
                    'Test::More' => 0
                  },
   'INSTALLDIRS' => 'site',

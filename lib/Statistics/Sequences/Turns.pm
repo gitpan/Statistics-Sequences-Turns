@@ -9,7 +9,7 @@ use Scalar::Util qw(looks_like_number);
 use Statistics::Sequences 0.051;
 @ISA = qw(Statistics::Sequences);
 
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 =pod
 
@@ -19,12 +19,12 @@ Statistics::Sequences::Turns - Kendall's test for turning-points - peaks or trou
 
 =head1 SYNOPSIS
 
- use Statistics::Sequences::Turns;
+ use Statistics::Sequences::Turns 0.031;
  $turns = Statistics::Sequences::Turns->new();
- $turns->load(0, 3, 9, 2 , 1, 1, 3, 4, 0, 3, 5, 5, 5, 8, 4, 7, 3, 2, 4, 3, 6);
- $val = $turns->observed(); # also expected() and variance()
- ($val, $sig) = $turns->zscore(); # Z = -0.0982471864864821, 2p = 0.92174
- $turns->test()->dump(); # print of all the descriptives and zscore, lumping each into object as well
+ $turns->load(0, 3, 9, 2 , 1, 1, 3, 4, 0, 3, 5, 5, 5, 8, 4, 7, 3, 2, 4, 3, 6); # or send with each stat call
+ $val = $turns->observed(); # also expected() and variance(), with optional arg trials => n in place of real data 
+ ($val, $sig) = $turns->zscore(tails => 2, ccorr => 1); # Z = -0.0982471864864821, 2p = 0.92174
+ $turns->test()->dump(text => 1); # print of all the descriptives and zscore, lumping each into object as well
 
 =head1 DESCRIPTION
 
@@ -46,6 +46,18 @@ Returns a new Turns object. Expects/accepts no arguments but the classname.
  $turns->load({'dist1' => \@data1, 'dist2' => \@data2})
 
 Loads data anonymously or by name. See L<load|Statistics::Sequences/load> in the Statistics::Sequences manpage.
+
+=head2 add
+
+See L<Statistics::Sequences/add>
+
+=head2 read
+
+See L<Statistics::Sequences/read>
+
+=head2 unload
+
+See L<Statistics::Sequences/unload>
 
 =head2 observed, turncount_observed, tco
 
@@ -70,23 +82,25 @@ The data to test can already have been L<load|load>ed, or you send it here as a 
 sub observed {# Count the number of turns in the given data:
     my $self = shift;
     my $args = ref $_[0] ? shift : {@_};
-    my $data_aref = ref $args->{'data'} ? $args->{'data'} : $self->{'testdata'};
+    my $data_aref = ref $args->{'data'} ? $args->{'data'} : $self->testdata($args);
     ref $data_aref or croak __PACKAGE__, '::Data for counting up turns are needed';
-    my $num = scalar(@{$data_aref});
+    my $data_u = _set_data($data_aref);
+    my $num = scalar(@{$data_u});
     return 0 if ! $num or $num < 3; 
     my ($count, $i) = (0);
+    
     for ($i = 1; $i < $num - 1; $i++) {
-        if ( ($data_aref->[$i - 1] > $data_aref->[$i]) && ($data_aref->[$i + 1] > $data_aref->[$i]) ) { # trough at $i
+        if ( ($data_u->[$i - 1] > $data_u->[$i]) && ($data_u->[$i + 1] > $data_u->[$i]) ) { # trough at $i
             $count++;
         }
-        elsif ( ($data_aref->[$i - 1] < $data_aref->[$i]) && ($data_aref->[$i + 1] < $data_aref->[$i]) ) { # peak at $i
+        elsif ( ($data_u->[$i - 1] < $data_u->[$i]) && ($data_u->[$i + 1] < $data_u->[$i]) ) { # peak at $i
             $count++;
         }
     }
     return $count;
 }
-*turncount_observed = &\observed;
-*tco = &\observed;
+*turncount_observed = \&observed;
+*tco = \&observed;
 
 =head2 expected, turncount_expected, tce
 
@@ -103,7 +117,7 @@ Returns the expected number of turns, which is simply set by I<N> the number of 
 sub expected {
    my $self = shift;
    my $args = ref $_[0] ? shift : {@_};
-   my $num = defined $args->{'trials'} ? $args->{'trials'} : ref $args->{'data'} ? scalar @{$args->{'data'}} : scalar(@{$self->{'testdata'}});
+   my $num = defined $args->{'trials'} ? $args->{'trials'} : ref $args->{'data'} ? scalar @{$args->{'data'}} : scalar(@{_set_data($self->testdata($args))});
     return 2/3 * ($num - 2);
 }
 *tce = \&expected;
@@ -124,7 +138,7 @@ Returns the expected variance in the number of turns for the given length of dat
 sub variance {
    my $self = shift;
    my $args = ref $_[0] ? shift : {@_};
-   my $num = defined $args->{'trials'} ? $args->{'trials'} : ref $args->{'data'} ? scalar @{$args->{'data'}} : scalar(@{$self->{'testdata'}});
+   my $num = defined $args->{'trials'} ? $args->{'trials'} : ref $args->{'data'} ? scalar @{$args->{'data'}} : scalar(@{_set_data($self->testdata($args))});
    return (16 * $num - 29) / 90;
 }
 *tcv = \&variance;
@@ -146,7 +160,7 @@ sub zscore {
    my $self = shift;
    my $args = ref $_[0] ? shift : {@_};
    my $tco = defined $args->{'observed'} ? $args->{'observed'} : $self->tco($args);
-   my $num = defined $args->{'trials'} ? $args->{'trials'} : ref $args->{'data'} ? scalar @{$args->{'data'}} : scalar(@{$self->{'testdata'}});
+   my $num = defined $args->{'trials'} ? $args->{'trials'} : ref $args->{'data'} ? scalar @{$args->{'data'}} : scalar(@{_set_data($self->testdata($args))});
    my $ccorr = defined $args->{'ccorr'} ? delete $args->{'ccorr'} : 1;
    my $tails = delete $args->{'tails'} || 2;
    my ($zval, $pval) = $self->{'zed'}->zscore(
@@ -166,14 +180,14 @@ sub zscore {
 
  $joins->test();
 
-Test the currently loaded data for significance of the number of turning-points. Returns the Turns object, lumped with a C<z_value>, C<p_value>, and the descriptives C<observed>, C<expected> and C<variance>. Note: Kendall (1973) observed that for turns there is "a fairly rapid tendency of the distribution to normality" (p. 24).
+Test the currently loaded data for significance of the number of turning-points. Returns the Turns object, lumped with a C<z_value>, C<p_value>, and the descriptives C<observed>, C<expected> and C<variance>. Note: for turns there is "a fairly rapid tendency of the distribution to normality" (Kendall 1973, p. 24).
 
 =cut
 
 sub test {
    my $seq = shift;
    my $args = ref $_[0] ? $_[0] : {@_};
-   $seq->_testdata_aref($args);
+   $seq->testdata($args);
    my $tco = defined $args->{'observed'} ? $args->{'observed'} : $seq->tco($args);
    my $tce = $seq->turncount_expected($args);
    my $tve = $seq->turncount_variance($args);
@@ -228,7 +242,7 @@ __END__
 
 =head2 Seating at the diner
 
-This is the data from Swed and Eisenhart (1943) also given as an example for the L<Runs test|Statistics::Sequences::Runs/EXAMPLE> and L<Vnomes test|Statistics::Sequences::Vnomes/EXAMPLE>. It lists the occupied (O) and empty (E) seats in a row at a lunch counter.
+These are the data from Swed and Eisenhart (1943) also given as an example for the L<Runs test|Statistics::Sequences::Runs/EXAMPLE> and L<Vnomes test|Statistics::Sequences::Vnomes/EXAMPLE>. It lists the occupied (O) and empty (E) seats in a row at a lunch counter.
 Have people taken up their seats on a random basis? The Runs test suggested some non-random basis for people to take their seats, ouputting (as per C<dump>):
 
   Runs: observed = 11.00, expected = 7.88, Z = 1.60, 1p = 0.054834
