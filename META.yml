@@ -4,7 +4,8 @@ author:
   - 'Roderick Garton <rgarton@cpan.org>'
 build_requires:
   Scalar::Util: 1.23
-  Statistics::Sequences: 0.051
+  Statistics::Sequences: 0.10
+  Statistics::Zed: 0.072
   Test::More: 0
 configure_requires:
   Module::Build: 0.36
@@ -17,9 +18,9 @@ name: Statistics-Sequences-Turns
 provides:
   Statistics::Sequences::Turns:
     file: lib/Statistics/Sequences/Turns.pm
-    version: 0.041
+    version: 0.1
 requires:
   perl: 5.006
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.041
+version: 0.10

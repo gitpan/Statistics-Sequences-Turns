@@ -5,11 +5,12 @@ use strict;
 use warnings;
 use Carp 'croak';
 use vars qw($VERSION @ISA);
-use Scalar::Util qw(looks_like_number);
-use Statistics::Sequences 0.051;
+use Statistics::Sequences 0.10;
 @ISA = qw(Statistics::Sequences);
-
-$VERSION = '0.041';
+$VERSION = 0.10;
+use Statistics::Zed 0.072;
+our $zed = Statistics::Zed->new();
+use Scalar::Util qw(looks_like_number);
 
 =pod
 
@@ -19,12 +20,16 @@ Statistics::Sequences::Turns - Kendall's test for turning-points - peaks or trou
 
 =head1 SYNOPSIS
 
- use Statistics::Sequences::Turns 0.04;
- $turns = Statistics::Sequences::Turns->new();
- $turns->load(0, 3, 9, 2 , 1, 1, 3, 4, 0, 3, 5, 5, 5, 8, 4, 7, 3, 2, 4, 3, 6); # or send with each stat call
- $val = $turns->observed(); # also expected() and variance(), with optional arg trials => n in place of real data 
- ($val, $sig) = $turns->zscore(tails => 2, ccorr => 1); # Z = -0.0982471864864821, 2p = 0.92174
- $turns->test()->dump(text => 1); # print of all the descriptives and zscore, lumping each into object as well
+ use strict;
+ use Statistics::Sequences::Turns 0.10;
+ my $turns = Statistics::Sequences::Turns->new();
+ $turns->load([qw/2 0 8 5 3 5 2 3 1 1 9 4 4 1 5 5 6 5 8 7 5 3 8 5 6/]); # strings/numbers; or send as "data => $aref" with each stat call
+ my $val = $turns->observed(state => 5); # other methods include: expected(), variance(), obsdev() and stdev()
+ $val = $turns->zscore(state => 5, tails => 2, ccorr => 1); # # or want an array & get back both z- and p-value
+ $val = $turns->p_value(state => 5, tails => 1); # assuming data are loaded; alias: test()
+ my $href = $turns->stats_hash(values => {observed => 1, p_value => 1}, ccorr => 1); # include any other stat-method as needed
+ $turns->dump(values => {observed => 1, expected => 1, p_value => 1}, ccorr => 1, flag => 1, precision_s => 3, precision_p => 7);
+ # prints: observed = 11.000, expected = 10.900, p_value = 0.5700167
 
 =head1 DESCRIPTION
 
@@ -40,29 +45,34 @@ Returns a new Turns object. Expects/accepts no arguments but the classname.
 
 =head2 load
 
- $turns->load(@data);
+ $turns->load(@data); # anonymously
  $turns->load(\@data);
- $turns->load('dist1' => \@data1, 'dist2' => \@data2)
- $turns->load({'dist1' => \@data1, 'dist2' => \@data2})
+ $turns->load('sample1' => \@data); # labelled whatever
 
-Loads data anonymously or by name. See L<load|Statistics::Sequences/load> in the Statistics::Sequences manpage.
+Loads data anonymously or by name - see L<load|Statistics::Data/load, load_data> in the Statistics::Data manpage for details on the various ways data can be loaded and then retrieved (more than shown here). Data must be numerical (ordinal, interval type). All elements must be numerical of the method croaks.
 
-=head2 add
+=cut
 
-See L<Statistics::Sequences/add>
+sub load {
+    my $self = shift;
+    $self->SUPER::load(@_);
+    my $data = $self->read(@_);
+    foreach (@$data) {
+        croak __PACKAGE__, '::test All data must be numerical for turns statistics' if ! looks_like_number($_);
+    }
+    return 1;
+}
 
-=head2 read
+=head2 add, read, unload
 
-See L<Statistics::Sequences/read>
-
-=head2 unload
-
-See L<Statistics::Sequences/unload>
+See L<Statistics::Data> for these additional operations on data that have been loaded.
 
 =head2 observed, turncount_observed, tco
 
- $count = $turns->observed(); # assumes testdata have already been loaded
- $count = $turns->observed(data => [qw/0 0 1 1 0 1 1 1 0 1/]);
+ $v = $pot->observed(); # use the first data loaded anonymously; specify a 'state' within it to test its pot
+ $v = $pot->observed(index => 1); # ... or give the required "index" for the loaded data
+ $v = $pot->observed(label => 'mysequence'); # ... or its "label" value
+ $v = $pot->observed(data => \@data); # ... or just give the data now
 
 Returns observed number of turns. This is the number of peaks and troughs, starting the count from index 1 of a flat array, checking if both its left/right (or past/future) neighbours are lesser than it (a peak) or greater than it (a trough). Wherever the values in successive indices of the list are equal, they are treated as a single observation/datum - so the following:
 
@@ -75,25 +85,21 @@ is counted up for turns as
 
 So there are four turns in this example - two peaks (0 1 0) and two troughs (1 0 1). (If repeated, this sequence would significantly deviate from expectation, I<p> = .035.)
 
-The data to test can already have been L<load|load>ed, or you send it here as a flat referenced array keyed as C<data>.
-
 =cut
 
-sub observed {# Count the number of turns in the given data:
+sub observed {
     my $self = shift;
     my $args = ref $_[0] ? shift : {@_};
-    my $data_aref = ref $args->{'data'} ? $args->{'data'} : $self->testdata($args);
-    ref $data_aref or croak __PACKAGE__, '::Data for counting up turns are needed';
-    my $data_u = _set_data($data_aref);
-    my $num = scalar(@{$data_u});
+    my $data = _set_data($self, $args);
+    my $num = scalar(@{$data});
     return 0 if ! $num or $num < 3; 
     my ($count, $i) = (0);
     
     for ($i = 1; $i < $num - 1; $i++) {
-        if ( ($data_u->[$i - 1] > $data_u->[$i]) && ($data_u->[$i + 1] > $data_u->[$i]) ) { # trough at $i
+        if ( ($data->[$i - 1] > $data->[$i]) && ($data->[$i + 1] > $data->[$i]) ) { # trough at $i
             $count++;
         }
-        elsif ( ($data_u->[$i - 1] < $data_u->[$i]) && ($data_u->[$i + 1] < $data_u->[$i]) ) { # peak at $i
+        elsif ( ($data->[$i - 1] < $data->[$i]) && ($data->[$i + 1] < $data->[$i]) ) { # peak at $i
             $count++;
         }
     }
@@ -104,11 +110,11 @@ sub observed {# Count the number of turns in the given data:
 
 =head2 expected, turncount_expected, tce
 
- $val = $turns->expected(); # assumes testdata have already been loaded
- $val = $turns->expected(data => [1, 0, 0, 0, 1, 0, 0, 1, 0, 1]); # count these data
- $val = $turns->expected(trials => 10); # use this trial number, assume no data
+ $v = $turns->expected(); # use first-loaded data; or specify by "index" or "label", or give it as "data" - see observed()
+ $v = $turns->expected(data => \@data); # use these data
+ $v = $turns->expected(trials => 10); # don't use actual data; calculate from this number of trials
 
-Returns the expected number of turns, which is simply set by I<N> the number of trials/observations/sample-size ...:
+Returns the expected number of turns, which is set by I<N> the number of trials/observations/sample-size ...:
 
 =for html <p>&nbsp;&nbsp;<i>E[T]</i> = 2 / 3 (<i>N</i> &ndash; 2)
 
@@ -117,17 +123,17 @@ Returns the expected number of turns, which is simply set by I<N> the number of 
 sub expected {
    my $self = shift;
    my $args = ref $_[0] ? shift : {@_};
-   my $num = defined $args->{'trials'} ? $args->{'trials'} : ref $args->{'data'} ? scalar @{$args->{'data'}} : scalar(@{_set_data($self->testdata($args))});
-    return 2/3 * ($num - 2);
+   my $num = defined $args->{'trials'} ? $args->{'trials'} : scalar(@{_set_data($self, $args)});
+   return 2/3 * ($num - 2);
 }
 *tce = \&expected;
 *turncount_expected = \&expected;
 
 =head2 variance, turncount_variance, tcv
 
- $val = $turns->variance(); # assume the data are already "loaded" for counting
- $val = $turns->variance(data => [1, 0, 0, 0, 1, 0, 0, 1, 0, 1]); # count for these data
- $val = $turns->variance(trials => number); # use this trial number 
+ $v = $turns->variance(); # use first-loaded data; or specify by "index" or "label", or give it as "data" - see observed()
+ $v = $turns->variance(data => \@data); # use these data
+ $v = $turns->variance(trials => number); # don't use actual data; calculate from this number of trials
 
 Returns the expected variance in the number of turns for the given length of data I<N>.
 
@@ -138,37 +144,68 @@ Returns the expected variance in the number of turns for the given length of dat
 sub variance {
    my $self = shift;
    my $args = ref $_[0] ? shift : {@_};
-   my $num = defined $args->{'trials'} ? $args->{'trials'} : ref $args->{'data'} ? scalar @{$args->{'data'}} : scalar(@{_set_data($self->testdata($args))});
+   my $num = defined $args->{'trials'} ? $args->{'trials'} : scalar(@{_set_data($self, $args)});
    return (16 * $num - 29) / 90;
 }
 *tcv = \&variance;
 *turncount_variance = \&variance;
 
-=head2 zscore, turncount_zscore, tzs, z_value
+=head2 obsdev, observed_deviation
 
- $val = $turns->zscore(); # data already loaded, use default windows and prob
- $val = $turns->zscore(data => $aref, ccorr => 1);
- ($zvalue, $pvalue) =  $turns->zscore(data => $aref, ccorr => 1, tails => 2); # same but wanting an array, get the p-value too
+ $v = $pot->obsdev(); # use data already loaded - anonymously; or specify its "label" or "index" - see observed()
+ $v = $pot->obsdev(data => [1.3, 0.007, -3.2, 11, 12]); # use these data
+
+Returns the deviation of (difference between) observed and expected pot for the loaded/given sequence (I<O> - I<E>). 
+
+=cut
+
+sub obsdev {
+    return observed(@_) - expected(@_);
+}
+*observed_deviation = \&obsdev;
+
+=head2 stdev, standard_deviation
+
+ $v = $pot->stdev(); # use data already loaded - anonymously; or specify its "label" or "index" - see observed()
+ $v = $pot->stdev(data => [3, 4.7, 55, 5.03]);
+
+Returns square-root of the variance.
+
+=cut
+
+sub stdev {
+    return sqrt(variance(@_));
+}
+*standard_deviation = \&stdev;
+
+=head2 z_value, zscore, turncount_zscore, tzs
+
+ $v = $turns->z_value(ccorr => 1); # use data already loaded - anonymously; or specify its "label" or "index" - see observed()
+ $v = $turns->z_value(data => $aref, ccorr => 1);
+ ($zvalue, $pvalue) = $turns->z_value(data => $aref, ccorr => 1, tails => 2); # same but wanting an array, get the p-value too
 
 Returns the zscore from a test of turncount deviation, taking the turncount expected away from that observed and dividing by the root expected turncount variance, by default with a continuity correction in the numerator. Called wanting an array, returns the z-value with its p-value for the tails (1 or 2) given.
-
-The data to test can already have been L<load|load>ed, or you send it directly as a flat referenced array keyed as C<data>.
 
 =cut
 
 sub zscore {
    my $self = shift;
    my $args = ref $_[0] ? shift : {@_};
+   my $data = _set_data($self, $args);
+   my $num = scalar(@$data);
    my $tco = defined $args->{'observed'} ? $args->{'observed'} : $self->tco($args);
-   my $num = defined $args->{'trials'} ? $args->{'trials'} : ref $args->{'data'} ? scalar @{$args->{'data'}} : scalar(@{_set_data($self->testdata($args))});
-   my $ccorr = defined $args->{'ccorr'} ? delete $args->{'ccorr'} : 1;
-   my $tails = delete $args->{'tails'} || 2;
-   my ($zval, $pval) = $self->{'zed'}->zscore(
+   my $ccorr = defined $args->{'ccorr'} ? $args->{'ccorr'} : 1;
+   my $tails = $args->{'tails'} || 2;
+   my $precision_s = $args->{'precision_s'};
+   my $precision_p = $args->{'precision_p'};
+   my ($zval, $pval) = $zed->zscore(
         observed => $tco,
         expected => $self->tce(trials => $num),
         variance => $self->tcv(trials => $num),
         ccorr => $ccorr,
         tails => $tails,
+        precision_s => $precision_s, 
+        precision_p => $precision_p,
      );
     return wantarray ? ($zval, $pval) : $zval;
 }
@@ -176,33 +213,22 @@ sub zscore {
 *turncount_zscore = \&zscore;
 *z_value = \&zscore;
 
-=head2 test, turns_test, tnt
+=head2 p_value, test, turns_test, tnt
 
- $joins->test();
+ $p = $turns->p_value(); # using loaded data and default args
+ $p = $turns->p_value(ccorr => 0|1, tails => 1|2); # normal-approximation based on loaded data
+ $p = $turns->p_value(data => $aref, ccorr => 1, tails => 2); #  using given data (by-passing load and read)
 
-Test the currently loaded data for significance of the number of turning-points. Returns the Turns object, lumped with a C<z_value>, C<p_value>, and the descriptives C<observed>, C<expected> and C<variance>. Note: for turns there is "a fairly rapid tendency of the distribution to normality" (Kendall 1973, p. 24).
+Test the currently loaded data for significance of the number of turning-points by normal approximation. Note: for turns there is "a fairly rapid tendency of the distribution to normality" (Kendall 1973, p. 24).
 
 =cut
 
-sub test {
-   my $seq = shift;
-   my $args = ref $_[0] ? $_[0] : {@_};
-   $seq->testdata($args);
-   my $tco = defined $args->{'observed'} ? $args->{'observed'} : $seq->tco($args);
-   my $tce = $seq->turncount_expected($args);
-   my $tve = $seq->turncount_variance($args);
-
-   if ($tve) {
-       $seq->_expound($tco, $tce, $tve, $args);
-   }
-   else {
-       $seq->_expire($tco, $tce, $args);
-   }
-
-   return $seq;
+sub p_value {
+   return (z_value(@_))[1];
 }
-*turns_test = \&test;
-*tnt = \&test;
+*test = \&p_value;
+*turns_test = \&p_value;
+*tnt = \&p_value;
 
 =head2 dump
 
@@ -215,52 +241,25 @@ Print test results to STDOUT. See L<dump|Statistics::Sequences/dump> in the Stat
 sub dump {
     my $self = shift;
     my $args = ref $_[0] ? $_[0] : {@_};
-    $args->{'testname'} = 'Turns';
-    if ($args->{'text'} and $args->{'text'} > 1) {
-        $args->{'title'} = 'Turns test results:';
-        $self->SUPER::_dump_verbose($args);
-    }
-     else {
-        $self->SUPER::_dump_sparse($args);
-    }
+    $args->{'stat'} = 'turns';
+    $self->SUPER::dump($args);
     return $self;
 }
 
 sub _set_data {# Remove equivalent successors: e.g., strip 2nd 2 from (3, 2, 2, 7, 2) # Check elements are numeric:
-    my $data_aref = shift;
+    my $self = shift;
+    my $args = ref $_[0] ? $_[0] : {@_};
+    my $data = $self->read($args);
+    ref $data or croak __PACKAGE__, '::Data for counting up turns are needed';
     my ($i, @data_u) = ();
-    for ($i = 0; $i < scalar(@{$data_aref}); $i++) {
-        croak __PACKAGE__, '::test All data must be numerical for testing turns' if ! looks_like_number($data_aref->[$i]);
-        push @data_u, $data_aref->[$i] if !scalar(@data_u) || $data_aref->[$i] != $data_u[-1];
+    for ($i = 0; $i < scalar(@{$data}); $i++) {
+        croak __PACKAGE__, '::test All data must be numerical for testing turns' if ! looks_like_number($data->[$i]);
+        push @data_u, $data->[$i] if !scalar(@data_u) || $data->[$i] != $data_u[-1];
     }
     return \@data_u;
 }
 
 __END__
-
-=head1 EXAMPLE
-
-=head2 Seating at the diner
-
-These are the data from Swed and Eisenhart (1943) also given as an example for the L<Runs test|Statistics::Sequences::Runs/EXAMPLE> and L<Vnomes test|Statistics::Sequences::Vnomes/EXAMPLE>. It lists the occupied (O) and empty (E) seats in a row at a lunch counter.
-Have people taken up their seats on a random basis? The Runs test suggested some non-random basis for people to take their seats, ouputting (as per C<dump>):
-
-  Runs: observed = 11.00, expected = 7.88, Z = 1.60, 1p = 0.054834
-
-That means there was more serial discontinuity than expected. What does the test of Turns tell us?
-
- use Statistics::Sequences::Turns;
- my $turns = Statistics::Sequences::Turns->new();
- my @seating = (qw/E O E E O E E E O E E E O E O E/);
- $turns->load(\@data);
- $turns->binate(); # transform Es and Os into 1s and 0s
- $turns->test(tails => 1)->dump();
-
-This outputs, as returned by C<string>: 
-
- Z = 1.95615199108988, 1p = 0.025224
-
-So each seated person is neighboured by empty seats, and/or each empty seat is neighboured by seated persons, more so than would be expected if people were taking their seats randomly.
 
 =head1 REFERENCES
 
@@ -282,7 +281,7 @@ See CHANGES in installation dist for revisions.
 
 =over 4
 
-=item Copyright (c) 2006-2012 Roderick Garton
+=item Copyright (c) 2006-2013 Roderick Garton
 
 rgarton AT cpan DOT org
 

@@ -4,9 +4,9 @@ lib/Statistics/Sequences/Turns.pm
 Makefile.PL
 MANIFEST			This list of files
 README
-t/00-load.t
+t/00-useok.t
+t/01-turns.t
 t/manifest.t
 t/pod-coverage.t
 t/pod.t
-t/turns.t
 META.yml

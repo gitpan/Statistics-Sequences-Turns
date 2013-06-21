@@ -1,5 +1,6 @@
-Revision history for Statistics-Sequences-Turns-0.041
+Revision history for Statistics-Sequences-Turns-0.10
 
-0.03/04  Descriptives methods added, plus support for argument only (data-free) expectation and variance.  
+0.10    June 2013
 
-(Earlier edits in main package dist)
+Descriptives methods added, plus support for argument only (data-free) expectation and variance. Not compatible with previous versions.
+
