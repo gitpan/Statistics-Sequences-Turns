@@ -1,6 +1,11 @@
-Revision history for Statistics-Sequences-Turns-0.10
+Revision history for perl module Statistics-Sequences-Turns
 
-0.10    June 2013
+0.11 2013.07.29
+    - Added test from Kanji (1993)
+    - Cleanup of load() so that all_numeric() check works for any loaded data, not just unreferenced data
+    - Misc POD revisions
 
-Descriptives methods added, plus support for argument only (data-free) expectation and variance. Not compatible with previous versions.
+0.10 2013.06.30
+    - Descriptives methods added, plus support for argument only (data-free) expectation and variance
+    - Not compatible with previous versions
 

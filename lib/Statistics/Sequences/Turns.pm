@@ -5,12 +5,11 @@ use strict;
 use warnings;
 use Carp 'croak';
 use vars qw($VERSION @ISA);
-use Statistics::Sequences 0.10;
+use Statistics::Sequences 0.11;
 @ISA = qw(Statistics::Sequences);
-$VERSION = 0.10;
+$VERSION = 0.11;
 use Statistics::Zed 0.072;
 our $zed = Statistics::Zed->new();
-use Scalar::Util qw(looks_like_number);
 
 =pod
 
@@ -21,7 +20,7 @@ Statistics::Sequences::Turns - Kendall's test for turning-points - peaks or trou
 =head1 SYNOPSIS
 
  use strict;
- use Statistics::Sequences::Turns 0.10;
+ use Statistics::Sequences::Turns 0.11;
  my $turns = Statistics::Sequences::Turns->new();
  $turns->load([qw/2 0 8 5 3 5 2 3 1 1 9 4 4 1 5 5 6 5 8 7 5 3 8 5 6/]); # strings/numbers; or send as "data => $aref" with each stat call
  my $val = $turns->observed(state => 5); # other methods include: expected(), variance(), obsdev() and stdev()
@@ -45,7 +44,7 @@ Returns a new Turns object. Expects/accepts no arguments but the classname.
 
 =head2 load
 
- $turns->load(@data); # anonymously
+ $turns->load(@data);
  $turns->load(\@data);
  $turns->load('sample1' => \@data); # labelled whatever
 
@@ -56,10 +55,8 @@ Loads data anonymously or by name - see L<load|Statistics::Data/load, load_data>
 sub load {
     my $self = shift;
     $self->SUPER::load(@_);
-    my $data = $self->read(@_);
-    foreach (@$data) {
-        croak __PACKAGE__, '::test All data must be numerical for turns statistics' if ! looks_like_number($_);
-    }
+    my $data = $self->read(index => -1);
+    croak __PACKAGE__, '::load All data must be numerical for turns statistics' if ! $self->all_numeric($data);
     return 1;
 }
 
@@ -69,10 +66,10 @@ See L<Statistics::Data> for these additional operations on data that have been l
 
 =head2 observed, turncount_observed, tco
 
- $v = $pot->observed(); # use the first data loaded anonymously; specify a 'state' within it to test its pot
- $v = $pot->observed(index => 1); # ... or give the required "index" for the loaded data
- $v = $pot->observed(label => 'mysequence'); # ... or its "label" value
- $v = $pot->observed(data => \@data); # ... or just give the data now
+ $v = $turns->observed(); # use anonymously loaded data
+ $v = $turns->observed(index => 1); # ... or give the required "index" for the loaded data
+ $v = $turns->observed(label => 'mysequence'); # ... or its "label" value
+ $v = $turns->observed(data => \@data); # ... or just give the data now
 
 Returns observed number of turns. This is the number of peaks and troughs, starting the count from index 1 of a flat array, checking if both its left/right (or past/future) neighbours are lesser than it (a peak) or greater than it (a trough). Wherever the values in successive indices of the list are equal, they are treated as a single observation/datum - so the following:
 
@@ -152,10 +149,10 @@ sub variance {
 
 =head2 obsdev, observed_deviation
 
- $v = $pot->obsdev(); # use data already loaded - anonymously; or specify its "label" or "index" - see observed()
- $v = $pot->obsdev(data => [1.3, 0.007, -3.2, 11, 12]); # use these data
+ $v = $turns->obsdev(); # use data already loaded - anonymously; or specify its "label" or "index" - see observed()
+ $v = $turns->obsdev(data => \@data); # use these data
 
-Returns the deviation of (difference between) observed and expected pot for the loaded/given sequence (I<O> - I<E>). 
+Returns the deviation of (difference between) observed and expected turn-count for the loaded/given sequence (I<O> - I<E>). 
 
 =cut
 
@@ -166,8 +163,8 @@ sub obsdev {
 
 =head2 stdev, standard_deviation
 
- $v = $pot->stdev(); # use data already loaded - anonymously; or specify its "label" or "index" - see observed()
- $v = $pot->stdev(data => [3, 4.7, 55, 5.03]);
+ $v = $turns->stdev(); # use data already loaded - anonymously; or specify its "label" or "index" - see observed()
+ $v = $turns->stdev(data => \@data);
 
 Returns square-root of the variance.
 
@@ -193,19 +190,14 @@ sub zscore {
    my $args = ref $_[0] ? shift : {@_};
    my $data = _set_data($self, $args);
    my $num = scalar(@$data);
-   my $tco = defined $args->{'observed'} ? $args->{'observed'} : $self->tco($args);
-   my $ccorr = defined $args->{'ccorr'} ? $args->{'ccorr'} : 1;
-   my $tails = $args->{'tails'} || 2;
-   my $precision_s = $args->{'precision_s'};
-   my $precision_p = $args->{'precision_p'};
    my ($zval, $pval) = $zed->zscore(
-        observed => $tco,
+        observed => defined $args->{'observed'} ? $args->{'observed'} : $self->tco($args),
         expected => $self->tce(trials => $num),
         variance => $self->tcv(trials => $num),
-        ccorr => $ccorr,
-        tails => $tails,
-        precision_s => $precision_s, 
-        precision_p => $precision_p,
+        ccorr => defined $args->{'ccorr'} ? $args->{'ccorr'} : 1,
+        tails => $args->{'tails'} || 2,
+        precision_s => $args->{'precision_s'}, 
+        precision_p => $args->{'precision_p'},
      );
     return wantarray ? ($zval, $pval) : $zval;
 }
@@ -246,15 +238,14 @@ sub dump {
     return $self;
 }
 
-sub _set_data {# Remove equivalent successors: e.g., strip 2nd 2 from (3, 2, 2, 7, 2) # Check elements are numeric:
+sub _set_data {# Remove equivalent successors: e.g., strip 2nd 2 from (3, 2, 2, 7, 2):
     my $self = shift;
     my $args = ref $_[0] ? $_[0] : {@_};
-    my $data = $self->read($args);
+    my $data = $self->read($args); # have been already checked to be numerical if previously load()'ed
     ref $data or croak __PACKAGE__, '::Data for counting up turns are needed';
     my ($i, @data_u) = ();
     for ($i = 0; $i < scalar(@{$data}); $i++) {
-        croak __PACKAGE__, '::test All data must be numerical for testing turns' if ! looks_like_number($data->[$i]);
-        push @data_u, $data->[$i] if !scalar(@data_u) || $data->[$i] != $data_u[-1];
+        push @data_u, $data->[$i] if !scalar(@data_u) or $data->[$i] != $data_u[-1];
     }
     return \@data_u;
 }

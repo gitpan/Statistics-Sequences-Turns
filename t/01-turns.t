@@ -1,12 +1,11 @@
 use strict;
 use warnings;
-use Test::More tests => 9;
+use Test::More tests => 13;
 use constant EPS => 1e-2;
 
-use Statistics::Sequences::Turns 0.10;
+use Statistics::Sequences::Turns 0.11;
 
 my $seq = Statistics::Sequences::Turns->new();
-isa_ok($seq, 'Statistics::Sequences::Turns');
 
 my %refdat = (
         std_dev => 3.04,
@@ -48,6 +47,32 @@ ok(equal($val, $refdat{'zscore'}), "zscore()  $val = $refdat{'zscore'}");
 
 $val = $seq->test();
 ok(equal($val, $refdat{'p_value'}), "p_value()  $val = $refdat{'p_value'}");
+
+#Kanji (1993) data: (this example has errors in the publication, with only 18 elements defined but given N = 19, and expectation rounded to 11.30, so z-value is under-estimated (as well as unsigned).
+@data = (.68, .34, .62, .73, .57, .32, .58, .34, .59, .56, .49, .17, .30, .39, .42, .41, .46, .50, .51);
+$seq->load(\@data);
+%refdat = (
+        std_dev => 1.75,
+        zscore => -1.34,
+        variance => 3.05,
+        observed => 9,
+        expected => 11.33,
+);
+$val = $seq->observed();
+ok(equal($val, $refdat{'observed'}), "observed()  $val = $refdat{'observed'}");
+
+$val = $seq->expected();
+ok(equal($val, $refdat{'expected'}), "expected()  $val = $refdat{'expected'}");
+
+$val = $seq->variance();
+ok(equal($val, $refdat{'variance'}), "variance()  $val = $refdat{'variance'}");
+
+$stdev = sqrt($val);
+$val = $seq->stdev();
+ok(equal($val, $stdev), "turns stdev $val != $stdev");
+
+$val = $seq->zscore(ccorr => 0);
+ok(equal($val, $refdat{'zscore'}), "zscore()  $val = $refdat{'zscore'}");
 
 sub equal {
     return 1 if $_[0] + EPS > $_[1] and $_[0] - EPS < $_[1];
